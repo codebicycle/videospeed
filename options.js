@@ -51,6 +51,9 @@ var keyCodeAliases = {
   222: '\'',
 }
 
+var whiteList = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'Home', 'End',
+  'ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']
+
 function recordKeyPress(e) {
   if (
     (e.keyCode >= 48 && e.keyCode <= 57)    // Numbers 0-9
@@ -68,7 +71,10 @@ function recordKeyPress(e) {
 };
 
 function inputFilterNumbersOnly(e) {
-  var char = String.fromCharCode(e.keyCode);
+  var char = e.key;
+  if (whiteList.includes(char)) {
+    return
+  }
   if (!/[\d\.]$/.test(char) || !/^\d+(\.\d*)?$/.test(e.target.value + char)) {
     e.preventDefault();
     e.stopPropagation();
@@ -118,7 +124,7 @@ function save_options() {
   fastKeyCode   = isNaN(fastKeyCode) ? tcDefaults.fastKeyCode : fastKeyCode;
   displayKeyCode = isNaN(displayKeyCode) ? tcDefaults.displayKeyCode : displayKeyCode;
 
-  chrome.storage.sync.set({
+  chrome.storage.local.set({
     speedStep:      speedStep,
     rewindTime:     rewindTime,
     advanceTime:    advanceTime,
@@ -145,7 +151,7 @@ function save_options() {
 
 // Restores options from chrome.storage
 function restore_options() {
-  chrome.storage.sync.get(tcDefaults, function(storage) {
+  chrome.storage.local.get(tcDefaults, function(storage) {
     document.getElementById('speedStep').value = storage.speedStep.toFixed(2);
     document.getElementById('rewindTime').value = storage.rewindTime;
     document.getElementById('advanceTime').value = storage.advanceTime;
@@ -164,7 +170,7 @@ function restore_options() {
 }
 
 function restore_defaults() {
-  chrome.storage.sync.set(tcDefaults, function() {
+  chrome.storage.local.set(tcDefaults, function() {
     restore_options();
     // Update status to let user know options were saved.
     var status = document.getElementById('status');
@@ -180,6 +186,7 @@ function initShortcutInput(inputId) {
   document.getElementById(inputId).addEventListener('blur', inputBlur);
   document.getElementById(inputId).addEventListener('keydown', recordKeyPress);
 }
+
 
 document.addEventListener('DOMContentLoaded', function () {
   restore_options();
