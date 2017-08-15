@@ -4,6 +4,7 @@ chrome.extension.sendMessage({}, function(response) {
       speed: 1.0,           // default 1x
       resetSpeed: 1.0,      // default 1x
       speedStep: 0.1,       // default 0.1x
+      fastSpeed: 1.8,       // default 1.8x
       rewindTime: 10,       // default 10s
       advanceTime: 10,      // default 10s
       resetKeyCode:  82,    // default: R
@@ -12,6 +13,7 @@ chrome.extension.sendMessage({}, function(response) {
       rewindKeyCode: 90,    // default: Z
       advanceKeyCode: 88,   // default: X
       displayKeyCode: 86,   // default: V
+      fastKeyCode: 71,      // default: G
       rememberSpeed: false, // default: false
       startHidden: false,   // default: false
       blacklist: `
@@ -27,12 +29,14 @@ chrome.extension.sendMessage({}, function(response) {
     tc.settings.speed = Number(storage.speed);
     tc.settings.resetSpeed = Number(storage.resetSpeed);
     tc.settings.speedStep = Number(storage.speedStep);
+    tc.settings.fastSpeed = Number(storage.fastSpeed);
     tc.settings.rewindTime = Number(storage.rewindTime);
     tc.settings.advanceTime = Number(storage.advanceTime);
     tc.settings.resetKeyCode = Number(storage.resetKeyCode);
     tc.settings.rewindKeyCode = Number(storage.rewindKeyCode);
     tc.settings.slowerKeyCode = Number(storage.slowerKeyCode);
     tc.settings.fasterKeyCode = Number(storage.fasterKeyCode);
+    tc.settings.fastKeyCode = Number(storage.fastKeyCode);
     tc.settings.displayKeyCode = Number(storage.displayKeyCode);
     tc.settings.advanceKeyCode = Number(storage.advanceKeyCode);
     tc.settings.rememberSpeed = Boolean(storage.rememberSpeed);
@@ -46,13 +50,17 @@ chrome.extension.sendMessage({}, function(response) {
 
   function defineVideoController() {
     tc.videoController = function(target, parent) {
+      if (target.dataset['vscid']) {
+        return;
+      }
+
       this.video = target;
       this.parent = target.parentElement || parent;
       this.document = target.ownerDocument;
       this.id = Math.random().toString(36).substr(2, 9);
       if (!tc.settings.rememberSpeed) {
         tc.settings.speed = 1.0;
-        tc.settings.resetSpeed = 1.0;
+        tc.settings.resetSpeed = tc.settings.fastSpeed;
       }
       this.initializeControls();
 
@@ -61,13 +69,16 @@ chrome.extension.sendMessage({}, function(response) {
       });
 
       target.addEventListener('ratechange', function(event) {
-        if (target.readyState === 0) {
-          return;
+        // Ignore ratechange events on unitialized videos.
+        // 0 == No information is available about the media resource.
+        if (event.target.readyState > 0) {
+          var speed = this.getSpeed();
+          this.speedIndicator.textContent = speed;
+          tc.settings.speed = speed;
+          chrome.storage.sync.set({'speed': speed}, function() {
+            console.log('Speed setting saved: ' + speed);
+          });
         }
-        var speed = this.getSpeed();
-        this.speedIndicator.textContent = speed;
-        tc.settings.speed = speed;
-        chrome.storage.sync.set({'speed': speed});
       }.bind(this));
 
       target.playbackRate = tc.settings.speed;
@@ -135,12 +146,27 @@ chrome.extension.sendMessage({}, function(response) {
       var fragment = document.createDocumentFragment();
       fragment.appendChild(wrapper);
 
-      // Note: when triggered via a MutationRecord, it's possible that the
-      // target is not the immediate parent. This appends the controller as
-      // the first element of the target, which may not be the parent.
-      this.parent.insertBefore(fragment, this.parent.firstChild);
       this.video.classList.add('vsc-initialized');
       this.video.dataset['vscid'] = this.id;
+
+      switch (true) {
+        case (location.hostname == 'www.amazon.com'):
+        case (/www\.hbogo\./).test(location.hostname):
+          // insert before parent to bypass overlay
+          this.parent.parentElement.insertBefore(fragment, this.parent);
+          break;
+
+        case (location.hostname == 'www.facebook.com'):
+          // set stacking context to same as parent's parent.
+          // + default fallthrough
+          this.parent.style.zIndex = 'auto';
+
+        default:
+          // Note: when triggered via a MutationRecord, it's possible that the
+          // target is not the immediate parent. This appends the controller as
+          // the first element of the target, which may not be the parent.
+          this.parent.insertBefore(fragment, this.parent.firstChild);
+      }
     }
   }
 
@@ -176,6 +202,13 @@ chrome.extension.sendMessage({}, function(response) {
   }
 
   function initializeNow(document) {
+      // in theory, this should only run once, in practice..
+      // that's not guaranteed, hence we enforce own init-once.
+      if (document.body.classList.contains('vsc-initialized')) {
+        return;
+      }
+      document.body.classList.add('vsc-initialized');
+
       if (document === window.document) {
         defineVideoController();
       } else {
@@ -190,7 +223,8 @@ chrome.extension.sendMessage({}, function(response) {
         var keyCode = event.keyCode;
 
         // Ignore if following modifier is active.
-        if (event.getModifierState("Alt")
+        if (!event.getModifierState
+            || event.getModifierState("Alt")
             || event.getModifierState("Control")
             || event.getModifierState("Fn")
             || event.getModifierState("Meta")
@@ -219,6 +253,8 @@ chrome.extension.sendMessage({}, function(response) {
           runAction('reset', document, true)
         } else if (keyCode == tc.settings.displayKeyCode) {
           runAction('display', document, true)
+        } else if (keyCode == tc.settings.fastKeyCode) {
+          runAction('fast', document, true);
         }
 
         return false;
@@ -227,9 +263,7 @@ chrome.extension.sendMessage({}, function(response) {
       function checkForVideo(node, parent, added) {
         if (node.nodeName === 'VIDEO') {
           if (added) {
-            if (!node.dataset['vscid']) {
-              new tc.videoController(node, parent);
-            }
+            new tc.videoController(node, parent);
           } else {
             if (node.classList.contains('vsc-initialized')) {
               let id = node.dataset['vscid'];
@@ -296,7 +330,7 @@ chrome.extension.sendMessage({}, function(response) {
         } else if (action === 'faster') {
           // Maximum playback speed in Chrome is set to 16:
           // https://cs.chromium.org/chromium/src/media/blink/webmediaplayer_impl.cc?l=103
-          var s = Math.min(v.playbackRate + tc.settings.speedStep, 16);
+          var s = Math.min( (v.playbackRate < 0.1 ? 0.0 : v.playbackRate) + tc.settings.speedStep, 16);
           v.playbackRate = Number(s.toFixed(2));
         } else if (action === 'slower') {
           // Audio playback is cut at 0.05:
@@ -306,13 +340,7 @@ chrome.extension.sendMessage({}, function(response) {
           var s = Math.max(v.playbackRate - tc.settings.speedStep, 0.0625);
           v.playbackRate = Number(s.toFixed(2));
         } else if (action === 'reset') {
-          if(v.playbackRate === 1.0) {
-            v.playbackRate = tc.settings.resetSpeed;
-          } else {
-            tc.settings.resetSpeed = v.playbackRate;
-            chrome.storage.sync.set({'resetSpeed': v.playbackRate});
-            v.playbackRate = 1.0;
-          }
+          resetSpeed(v, 1.0);
         } else if (action === 'close') {
           v.classList.add('vsc-cancelled');
           controller.remove();
@@ -321,9 +349,21 @@ chrome.extension.sendMessage({}, function(response) {
           controller.classList.toggle('vsc-hidden');
         } else if (action === 'drag') {
           handleDrag(v, controller);
+        } else if (action === 'fast') {
+          resetSpeed(v, tc.settings.fastSpeed);
         }
       }
     });
+  }
+
+  function resetSpeed(v, target) {
+    if (v.playbackRate === target) {
+      v.playbackRate = tc.settings.resetSpeed;
+    } else {
+      tc.settings.resetSpeed = v.playbackRate;
+      chrome.storage.sync.set({'resetSpeed': v.playbackRate});
+      v.playbackRate = target;
+    }
   }
 
  function handleDrag(video, controller) {
