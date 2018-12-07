@@ -59,7 +59,7 @@ chrome.runtime.sendMessage({}, function(response) {
       this.document = target.ownerDocument;
       this.id = Math.random().toString(36).substr(2, 9);
       if (!tc.settings.rememberSpeed) {
-        tc.settings.speed = 1.0;
+        tc.settings.speed = target.playbackRate;
         tc.settings.resetSpeed = tc.settings.fastSpeed;
       }
       this.initializeControls();
