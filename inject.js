@@ -159,6 +159,17 @@ function setKeyBindings(action, value) {
   ] = value;
 }
 
+function secondsToTime(seconds) {
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = Math.floor(seconds % 60);
+
+  if (h < 10) { h = "0" + h; }
+  if (m < 10) { m = "0" + m; }
+  if (s < 10) { s = "0" + s; }
+  return h + ':' + m + ':' + s;
+}
+
 function defineVideoController() {
   // Data structures
   // ---------------
@@ -169,6 +180,7 @@ function defineVideoController() {
   //            A/V element's parentNode OR the node whose children changed.
   //   div = Controller's DOM element (which happens to be a DIV)
   //   speedIndicator = DOM element in the Controller of the speed indicator
+  //   ETAIndicator   = DOM element in the Controller of the ETA indicator
 
   // added to AUDIO / VIDEO DOM elements
   //    vsc = reference to the videoController
@@ -289,6 +301,8 @@ function defineVideoController() {
       wrapper.classList.add("vsc-hidden");
     }
 
+    var ETA = secondsToTime(this.video.duration / speed);
+
     var shadow = wrapper.attachShadow({ mode: "open" });
     var shadowTemplate = `
         <style>
@@ -305,6 +319,7 @@ function defineVideoController() {
             <button data-action="faster">&plus;</button>
             <button data-action="advance" class="rw">»</button>
             <button data-action="display" class="hideButton">&times;</button>
+            <span>${ETA}</span>
           </span>
         </div>
       `;
@@ -341,6 +356,7 @@ function defineVideoController() {
       .addEventListener("mousedown", (e) => e.stopPropagation(), false);
 
     this.speedIndicator = shadow.querySelector("span");
+    this.ETAIndicator = shadow.querySelector("#controls span");
     var fragment = document.createDocumentFragment();
     fragment.appendChild(wrapper);
 
@@ -429,6 +445,7 @@ function setupListener() {
     if (!video.vsc)
       return;
     var speedIndicator = video.vsc.speedIndicator;
+    var ETAIndicator = video.vsc.ETAIndicator;
     var src = video.currentSrc;
     var speed = Number(video.playbackRate.toFixed(2));
 
@@ -436,6 +453,7 @@ function setupListener() {
 
     log("Updating controller with new speed", 5);
     speedIndicator.textContent = speed.toFixed(2);
+    ETAIndicator.textContent = secondsToTime(video.duration / speed);
     tc.settings.speeds[src] = speed;
     log("Storing lastSpeed in settings for the rememberSpeed feature", 5);
     tc.settings.lastSpeed = speed;
@@ -707,7 +725,10 @@ function setSpeed(video, speed) {
     video.playbackRate = Number(speedvalue);
   }
   var speedIndicator = video.vsc.speedIndicator;
+  var ETAIndicator = video.vsc.ETAIndicator;
+
   speedIndicator.textContent = speedvalue;
+  ETAIndicator.textContent = secondsToTime(video.duration / speedvalue);
   tc.settings.lastSpeed = speed;
   refreshCoolDown();
   log("setSpeed finished: " + speed, 5);
