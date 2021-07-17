@@ -1,0 +1,29 @@
+---
+name: Firefox-specific feature request
+about: All other request shall be implemented upstream, at igrigorik/videospeed
+labels: enchancement
+---
+
+<!--
+
+Hi and thanks for your interest.
+
+This extension is a fork of the Video Speed Controller Chrome extension, with minor changes to make it work on Firefox.
+It will stay as close as possible to the original.  
+https://github.com/igrigorik/videospeed
+
+Any new features should be discussed there, and if implemented they will be available in Firefox too.
+
+-->
+
+
+
+
+
+<!--- Please keep the note below for others who read your bug report. -->
+
+#### How to use GitHub
+
+* Please use the 👍 [reaction](https://blog.github.com/2016-03-10-add-reactions-to-pull-requests-issues-and-comments/) to show that you are affected by the same issue.
+* Please don't comment if you have no relevant information to add. It's just extra noise for everyone subscribed to this issue.
+* Subscribe to receive notifications on status change and new comments.

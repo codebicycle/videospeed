@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request upstream
+    url: https://github.com/igrigorik/videospeed/issues
+    about: This is a fork with minor changes to make it work with Firefox. Any features implemented there will be available in Firefox, too.
