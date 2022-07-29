@@ -9,6 +9,8 @@ var tcDefaults = {
   forceLastSavedSpeed: false, //default: false
   enabled: true, // default enabled
   controllerOpacity: 0.3, // default: 0.3
+  controllerLocationX: 0, // default: 0
+  controllerLocationY: 0, 
   keyBindings: [
     { action: "display", key: 86, value: 0, force: false, predefined: true }, // V
     { action: "slower", key: 83, value: 0.1, force: false, predefined: true }, // S
@@ -218,6 +220,8 @@ function save_options() {
   var enabled = document.getElementById("enabled").checked;
   var startHidden = document.getElementById("startHidden").checked;
   var controllerOpacity = document.getElementById("controllerOpacity").value;
+  var controllerLocationX = document.getElementById("controllerLocationX").value;
+  var controllerLocationY = document.getElementById("controllerLocationY").value;
   var blacklist = document.getElementById("blacklist").value;
 
   chrome.storage.sync.remove([
@@ -241,6 +245,8 @@ function save_options() {
       enabled: enabled,
       startHidden: startHidden,
       controllerOpacity: controllerOpacity,
+      controllerLocationX: controllerLocationX,
+      controllerLocationY: controllerLocationY,
       keyBindings: keyBindings,
       blacklist: blacklist.replace(regStrip, "")
     },
@@ -263,8 +269,9 @@ function restore_options() {
     document.getElementById("audioBoolean").checked = storage.audioBoolean;
     document.getElementById("enabled").checked = storage.enabled;
     document.getElementById("startHidden").checked = storage.startHidden;
-    document.getElementById("controllerOpacity").value =
-      storage.controllerOpacity;
+    document.getElementById("controllerOpacity").value =storage.controllerOpacity;
+    document.getElementById("controllerLocationX").value =storage.controllerLocationX;
+    document.getElementById("controllerLocationY").value =storage.controllerLocationY;
     document.getElementById("blacklist").value = storage.blacklist;
 
     // ensure that there is a "display" binding for upgrades from versions that had it as a separate binding

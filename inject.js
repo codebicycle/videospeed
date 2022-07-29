@@ -12,6 +12,8 @@ var tc = {
     audioBoolean: false, // default: false
     startHidden: false, // default: false
     controllerOpacity: 0.3, // default: 0.3
+    controllerLocationX: 0, // default: 0
+    controllerLocationY: 0, // default: 0
     keyBindings: [],
     blacklist: `\
       www.instagram.com
@@ -116,6 +118,8 @@ chrome.storage.sync.get(tc.settings, function (storage) {
       startHidden: tc.settings.startHidden,
       enabled: tc.settings.enabled,
       controllerOpacity: tc.settings.controllerOpacity,
+      controllerLocationX: tc.settings.controllerLocationX,
+      controllerLocationY: tc.settings.controllerLocationY,
       blacklist: tc.settings.blacklist.replace(regStrip, "")
     });
   }
@@ -127,6 +131,8 @@ chrome.storage.sync.get(tc.settings, function (storage) {
   tc.settings.enabled = Boolean(storage.enabled);
   tc.settings.startHidden = Boolean(storage.startHidden);
   tc.settings.controllerOpacity = Number(storage.controllerOpacity);
+  tc.settings.controllerLocationX = Number(storage.controllerLocationX);
+  tc.settings.controllerLocationY = Number(storage.controllerLocationY);
   tc.settings.blacklist = String(storage.blacklist);
 
   // ensure that there is a "display" binding (for upgrades from versions that had it as a separate binding)
@@ -273,8 +279,11 @@ function defineVideoController() {
     log("initializeControls Begin", 5);
     const document = this.video.ownerDocument;
     const speed = this.video.playbackRate.toFixed(2);
-    var top = Math.max(this.video.offsetTop, 0) + "px",
-      left = Math.max(this.video.offsetLeft, 0) + "px";
+    var curTransform = new WebKitCSSMatrix(window.getComputedStyle(this.video).webkitTransform);
+    var videoLeft = this.video.offsetLeft + curTransform.m41; //real offset left
+    var videoTop = this.video.offsetTop + curTransform.m42; //real offset top
+    var top = (Math.max(videoTop, 0)+tc.settings.controllerLocationY) + "px",
+      left = (Math.max(videoLeft, 0)+tc.settings.controllerLocationX) + "px";
 
     log("Speed variable set to: " + speed, 5);
 
@@ -871,6 +880,11 @@ function handleDrag(video, e) {
     let style = shadowController.style;
     let dx = e.clientX - initialMouseXY[0];
     let dy = e.clientY - initialMouseXY[1];
+	chrome.storage.sync.set(
+    {
+      controllerLocationX: initialControllerXY[0] + dx,
+      controllerLocationY: initialControllerXY[1] + dy
+    });
     style.left = initialControllerXY[0] + dx + "px";
     style.top = initialControllerXY[1] + dy + "px";
   };
