@@ -13,12 +13,8 @@ var tc = {
     startHidden: false, // default: false
     controllerOpacity: 0.3, // default: 0.3
     keyBindings: [],
-    blacklist: `\
-      www.instagram.com
-      twitter.com
-      vine.co
-      imgur.com
-      teams.microsoft.com
+    allowList: `\
+      youtube.com
     `.replace(regStrip, ""),
     defaultLogLevel: 4,
     logLevel: 3
@@ -116,7 +112,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
       startHidden: tc.settings.startHidden,
       enabled: tc.settings.enabled,
       controllerOpacity: tc.settings.controllerOpacity,
-      blacklist: tc.settings.blacklist.replace(regStrip, "")
+      allowList: tc.settings.allowList.replace(regStrip, "")
     });
   }
   tc.settings.lastSpeed = Number(storage.lastSpeed);
@@ -127,7 +123,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
   tc.settings.enabled = Boolean(storage.enabled);
   tc.settings.startHidden = Boolean(storage.startHidden);
   tc.settings.controllerOpacity = Number(storage.controllerOpacity);
-  tc.settings.blacklist = String(storage.blacklist);
+  tc.settings.allowList = String(storage.allowList);
 
   // ensure that there is a "display" binding (for upgrades from versions that had it as a separate binding)
   if (
@@ -377,9 +373,9 @@ function escapeStringRegExp(str) {
   return str.replace(matchOperatorsRe, "\\$&");
 }
 
-function isBlacklisted() {
-  blacklisted = false;
-  tc.settings.blacklist.split("\n").forEach((match) => {
+function isAllowListed() {
+  allowListed = false;
+  tc.settings.allowList.split("\n").forEach((match) => {
     match = match.replace(regStrip, "");
     if (match.length == 0) {
       return;
@@ -396,11 +392,11 @@ function isBlacklisted() {
     }
 
     if (regexp.test(location.href)) {
-      blacklisted = true;
+      allowListed = true;
       return;
     }
   });
-  return blacklisted;
+  return allowListed;
 }
 
 var coolDown = false;
@@ -478,7 +474,7 @@ function setupListener() {
 
 function initializeWhenReady(document) {
   log("Begin initializeWhenReady", 5);
-  if (isBlacklisted()) {
+  if (!isAllowListed()) {
     return;
   }
   window.addEventListener('load', () => {
