@@ -28,6 +28,199 @@ var tc = {
   mediaElements: []
 };
 
+// ===== Site Preference Helpers =====
+
+// Best-effort registrable domain extraction (eTLD+1). Not perfect without PSL, but solid for common TLDs.
+function getRegistrableDomain(hostname) {
+  try {
+    hostname = (hostname || location.hostname || "").toLowerCase();
+    // strip common mobile/www prefixes
+    hostname = hostname.replace(/^(www|m|amp)\./, "");
+    const parts = hostname.split(".");
+    if (parts.length >= 2) {
+      const tld = parts.slice(-1)[0];
+      const sld = parts.slice(-2)[0];
+      // crude guard for multi-part TLDs; fallback if needed
+      if (["co", "com", "org", "net", "gov", "edu"].includes(sld) && parts.length >= 3) {
+        return parts.slice(-3).join(".");
+      }
+      return parts.slice(-2).join(".");
+    }
+    return hostname;
+  } catch (_) {
+    return location.hostname || "unknown";
+  }
+}
+
+const SITE_PREFS_KEY = "sitePrefs";
+
+async function getSitePrefs() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(SITE_PREFS_KEY, (result) => {
+      resolve(result[SITE_PREFS_KEY] || {});
+    });
+  });
+}
+
+async function setSitePrefs(prefs) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [SITE_PREFS_KEY]: prefs }, resolve);
+  });
+}
+
+async function getDomainPref(domain) {
+  const prefs = await getSitePrefs();
+  return prefs[domain] || null;
+}
+
+async function saveDomainPref(domain, pref) {
+  const prefs = await getSitePrefs();
+  prefs[domain] = pref;
+  await setSitePrefs(prefs);
+}
+
+function getPreferredSpeedDefault() {
+  // reuse extension's preferred speed if available on window or settings; otherwise 1.6
+  try {
+    if (window.vsc && typeof window.vsc.getPreference === "function") {
+      const s = window.vsc.getPreference("preferredSpeed");
+      if (typeof s === "number" && s > 0) return s;
+    }
+  } catch (_) {}
+  return 1.6;
+}
+
+// Create a lightweight prompt in Shadow DOM
+function buildPromptUI({ domain, speed, onChoose }) {
+  const host = document.createElement("div");
+  host.id = "vsc-site-prompt-host";
+  host.style.position = "fixed";
+  host.style.top = "16px";
+  host.style.right = "16px";
+  host.style.zIndex = "2147483647"; // max-ish
+  host.style.width = "320px";
+  host.style.pointerEvents = "auto";
+
+  const shadow = host.attachShadow({ mode: "open" });
+  const wrapper = document.createElement("div");
+
+  wrapper.innerHTML = `
+    <style>
+      .card {
+        font: 13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+        background: #111;
+        color: #f5f5f5;
+        border: 1px solid #333;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.35);
+        padding: 12px 12px 10px;
+      }
+      .title { font-weight: 600; margin-bottom: 6px; }
+      .muted { opacity: .8; margin-bottom: 10px; }
+      .row { display: flex; gap: 8px; }
+      button {
+        flex: 1;
+        border: 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        background: #2b2b2b;
+        color: #fff;
+      }
+      button.primary { background: #1f6feb; }
+      button.warn { background: #3a3a3a; }
+      .kbd { background:#222; padding:1px 5px; border-radius:4px; border:1px solid #333; }
+    </style>
+    <div class="card" role="dialog" aria-live="polite" aria-label="Video Speed Controller site prompt">
+      <div class="title">Use preferred speed on <span>${domain}</span>?</div>
+      <div class="muted">Apply <b>${speed.toFixed(2)}×</b> automatically for all videos on this site.</div>
+      <div class="row">
+        <button class="primary" data-action="always" autofocus>Always</button>
+        <button class="warn" data-action="never">Never</button>
+        <button data-action="later">Not now</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Shortcuts: <span class="kbd">Enter</span> = Always, <span class="kbd">Esc</span> = Never</div>
+    </div>
+  `;
+
+  shadow.appendChild(wrapper);
+  document.documentElement.appendChild(host);
+
+  const cleanup = () => host.remove();
+
+  shadow.querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", e => {
+      const action = e.currentTarget.getAttribute("data-action");
+      onChoose(action, cleanup);
+    });
+  });
+
+  const onKey = (e) => {
+    if (e.key === "Enter") { onChoose("always", cleanup); }
+    else if (e.key === "Escape") { onChoose("never", cleanup); }
+  };
+  shadow.addEventListener("keydown", onKey);
+  // ensure focus inside shadow so Enter works
+  shadow.querySelector("button[autofocus]")?.focus();
+
+  return { cleanup };
+}
+
+async function maybePromptAndApplyForSite(firstVideoEl) {
+  const domain = getRegistrableDomain(location.hostname);
+  const existing = await getDomainPref(domain);
+  const preferredSpeed = getPreferredSpeedDefault();
+
+  // Already decided: apply if enabled and exit
+  if (existing && existing.enabled) {
+    applySpeedToAllVideos(preferredSpeed);
+    return;
+  }
+  if (existing && existing.enabled === false) {
+    // explicitly disabled: do nothing
+    return;
+  }
+
+  // Not decided yet: show prompt
+  const { cleanup } = buildPromptUI({
+    domain,
+    speed: preferredSpeed,
+    onChoose: async (action, done) => {
+      if (action === "always") {
+        await saveDomainPref(domain, { enabled: true, speed: preferredSpeed, decidedAt: Date.now() });
+        applySpeedToAllVideos(preferredSpeed);
+      } else if (action === "never") {
+        await saveDomainPref(domain, { enabled: false, speed: preferredSpeed, decidedAt: Date.now() });
+      } // "later" -> do nothing, no persistence
+      done();
+    }
+  });
+}
+
+// Apply speed to all existing and future videos on the page
+function applySpeedToAllVideos(speed) {
+  const setSpeed = (v) => {
+    try {
+      v.playbackRate = speed;
+      if (v.preservesPitch !== undefined) v.preservesPitch = true;
+    } catch (_) {}
+  };
+  document.querySelectorAll("video").forEach(setSpeed);
+
+  // Future videos
+  const mo = new MutationObserver((muts) => {
+    for (const m of muts) {
+      m.addedNodes.forEach(node => {
+        if (node && node.nodeType === 1) {
+          if (node.tagName === "VIDEO") setSpeed(node);
+          node.querySelectorAll?.("video").forEach(setSpeed);
+        }
+      });
+    }
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+}
+
 /* Log levels (depends on caller specifying the correct level)
   1 - none
   2 - error
@@ -902,3 +1095,22 @@ function showController(controller) {
     log("Hiding controller", 5);
   }, 2000);
 }
+
+// When first playable video is detected on a page, consider prompting
+(function bootstrapSiteDecision() {
+  const tryInit = () => {
+    const vid = document.querySelector("video");
+    if (vid) {
+      maybePromptAndApplyForSite(vid);
+      return true;
+    }
+    return false;
+  };
+
+  if (!tryInit()) {
+    const mo = new MutationObserver(() => {
+      if (tryInit()) mo.disconnect();
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  }
+})();
