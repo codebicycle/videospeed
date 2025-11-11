@@ -387,3 +387,30 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 });
+
+const SITE_PREFS_KEY = "sitePrefs";
+
+async function renderSitePrefs() {
+  const { [SITE_PREFS_KEY]: prefs } = await chrome.storage.local.get(SITE_PREFS_KEY);
+  const container = document.getElementById("site-prefs");
+  container.innerHTML = "";
+  const list = document.createElement("ul");
+  const entries = Object.entries(prefs || {});
+  if (entries.length === 0) {
+    container.textContent = "No site decisions saved yet.";
+    return;
+  }
+  for (const [domain, data] of entries) {
+    const li = document.createElement("li");
+    li.textContent = `${domain} — ${data.enabled ? "Always" : "Never"} (${(data.speed||1.6).toFixed(2)}×)`;
+    list.appendChild(li);
+  }
+  container.appendChild(list);
+}
+
+document.getElementById("clear-site-prefs").addEventListener("click", async () => {
+  await chrome.storage.local.remove(SITE_PREFS_KEY);
+  renderSitePrefs();
+});
+
+document.addEventListener("DOMContentLoaded", renderSitePrefs);
