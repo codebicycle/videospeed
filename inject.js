@@ -889,16 +889,20 @@ function handleDrag(video, e) {
   parentElement.addEventListener("mousemove", startDragging);
 }
 
-var timer = null;
 function showController(controller) {
   log("Showing controller", 4);
   controller.classList.add("vcs-show");
 
-  if (timer) clearTimeout(timer);
+  // A page can contain multiple tracked media elements. Keep the timeout on
+  // the controller it belongs to so showing another controller cannot cancel
+  // this controller's pending hide.
+  if (controller.showTimeOut !== undefined) {
+    clearTimeout(controller.showTimeOut);
+  }
 
-  timer = setTimeout(function () {
+  controller.showTimeOut = setTimeout(function () {
     controller.classList.remove("vcs-show");
-    timer = false;
+    controller.showTimeOut = undefined;
     log("Hiding controller", 5);
   }, 2000);
 }
