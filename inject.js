@@ -488,11 +488,13 @@ function initializeWhenReady(document) {
     if (document.readyState === "complete") {
       initializeNow(document);
     } else {
-      document.onreadystatechange = () => {
+      // Don't assign document.onreadystatechange: that would replace the
+      // page's own handler (e.g. PayPal's login bootstrap) and break the site.
+      document.addEventListener("readystatechange", () => {
         if (document.readyState === "complete") {
           initializeNow(document);
         }
-      };
+      });
     }
   }
   log("End initializeWhenReady", 5);
