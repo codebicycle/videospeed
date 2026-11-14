@@ -256,12 +256,14 @@ function defineVideoController() {
     observer.observe(target, {
       attributeFilter: ["src", "currentSrc"]
     });
+    this.srcObserver = observer;
   };
 
   tc.videoController.prototype.remove = function () {
     this.div.remove();
     this.video.removeEventListener("play", this.handlePlay);
-    this.video.removeEventListener("seek", this.handleSeek);
+    this.video.removeEventListener("seeked", this.handleSeek);
+    this.srcObserver.disconnect();
     delete this.video.vsc;
     let idx = tc.mediaElements.indexOf(this.video);
     if (idx != -1) {
@@ -603,28 +605,57 @@ function initializeNow(document) {
     );
   });
 
+  var mediaSelector = tc.settings.audioBoolean ? "video,audio" : "video";
+
   function checkForVideo(node, parent, added) {
+    // Only elements can be, or contain, media.
+    if (node.nodeType !== 1) {
+      return;
+    }
     // Only proceed with supposed removal if node is missing from DOM
     if (!added && document.body.contains(node)) {
       return;
     }
-    if (
+    var media =
       node.nodeName === "VIDEO" ||
       (node.nodeName === "AUDIO" && tc.settings.audioBoolean)
-    ) {
+        ? [node]
+        : node.querySelectorAll(mediaSelector);
+    media.forEach(function (m) {
       if (added) {
-        node.vsc = new tc.videoController(node, parent);
-      } else {
-        if (node.vsc) {
-          node.vsc.remove();
-        }
+        m.vsc = new tc.videoController(m, m.parentNode || parent);
+      } else if (m.vsc) {
+        m.vsc.remove();
       }
-    } else if (node.children != undefined) {
-      for (var i = 0; i < node.children.length; i++) {
-        const child = node.children[i];
-        checkForVideo(child, child.parentNode || parent, added);
-      }
+    });
+  }
+
+  // Looking for a video inside shadow DOM means walking every element on the
+  // page. Doing that for each aria-hidden change froze pages for seconds, so
+  // the walk now runs at most once per SHADOW_SCAN_INTERVAL.
+  var SHADOW_SCAN_INTERVAL = 1000;
+  var shadowScanTimer = null;
+  var lastShadowScan = 0;
+
+  function scanForShadowVideo() {
+    shadowScanTimer = null;
+    lastShadowScan = Date.now();
+    var flattenedNodes = getShadow(document.body);
+    var node = flattenedNodes.filter((x) => x.tagName == "VIDEO")[0];
+    if (node) {
+      if (node.vsc) node.vsc.remove();
+      checkForVideo(node, node.parentNode, true);
     }
+  }
+
+  function scheduleShadowScan() {
+    if (shadowScanTimer !== null) {
+      return;
+    }
+    var wait = Math.max(0, lastShadowScan + SHADOW_SCAN_INTERVAL - Date.now());
+    shadowScanTimer = setTimeout(function () {
+      requestIdleCallback(scanForShadowVideo, { timeout: 1000 });
+    }, wait);
   }
 
   var observer = new MutationObserver(function (mutations) {
@@ -648,15 +679,7 @@ function initializeNow(document) {
                 mutation.target.attributes["aria-hidden"] &&
                 mutation.target.attributes["aria-hidden"].value == "false"
               ) {
-                var flattenedNodes = getShadow(document.body);
-                var node = flattenedNodes.filter(
-                  (x) => x.tagName == "VIDEO"
-                )[0];
-                if (node) {
-                  if (node.vsc)
-                    node.vsc.remove();
-                  checkForVideo(node, node.parentNode || mutation.target, true);
-                }
+                scheduleShadowScan();
               }
               break;
           }
